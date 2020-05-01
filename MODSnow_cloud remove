@@ -1,0 +1,83 @@
+clear all;
+% directory paths for CSV dataset 
+ipt_myd=dir('C:\Zhihua\glacio_hydrological_model\codes\MYD\*.csv');
+ipt_mod=dir('C:\Zhihua\glacio_hydrological_model\codes\MOD\*.csv');
+cd C:\Zhihua\glacio_hydrological_model\codes
+StopNum=10; % number of iteration for spatial and tempora correction,optional value
+for NKstop=1:1:StopNum
+for kk=1:length(ipt_myd)
+% read CSV data into three-dimension array SCA(x,y,kk),x and y for pixellocation, and kk for daily/8 day
+cd C:\Zhihua\glacio_hydrological_model\codes\MYD
+fname_myd=ipt_myd(kk).name;SCAMYD(:,:,kk)=csvread(fname_myd, 6, 0);SCAMYD_Ori(:,:,kk)=csvread(fname_myd, 6, 0);
+cd C:\Zhihua\glacio_hydrological_model\codes\MOD
+fname_mod=ipt_mod(kk).name;SCAMOD(:,:,kk)=csvread(fname_mod, 6, 0);SCAMOD_Ori(:,:,kk)=csvread(fname_mod, 6, 0);
+[n m k]=size(SCAMYD);
+for Nstop=1:1:StopNum
+for i=1:n
+    for j=1:m
+        if 1<i&i<n&1<j&j<m
+% spatial correction for MYD and MOD separately, if there are at least three pixels marked as snow (pixel value =200) surrounding a cloud pixel(value=50), then the cloud pixel is corrected into snow pixel
+        if SCAMYD(i,j,kk)==50
+            AA=[SCAMYD(i-1,j,kk) SCAMYD(i+1,j,kk) SCAMYD(i,j-1,kk) SCAMYD(i,j+1,kk)];
+            t=length(find(AA==200));
+        if t>=3
+            SCAMYD(i,j,kk)=200;Nstop=1;
+        end
+        end
+        if SCAMOD(i,j,kk)==50
+            BB=[SCAMOD(i-1,j,kk) SCAMOD(i+1,j,kk) SCAMOD(i,j-1,kk) SCAMOD(i,j+1,kk)];
+            t=length(find(BB==200));
+        if t>=3
+            SCAMOD(i,j,kk)=200;Nstop=1;
+        end
+        end
+        end
+%combine snow cover information from MYD and MOD based on three
+%scenarios:1)if one pixel is marked as cloud in MYD or MOD while marked as snow in the other product, then it is corrected into snow pixel in both MYD and MOD;
+%2)if one pixel is marked as snow in MYD or MOD while marked as values from 11-100(except 50) in the other product, then it is not snow pixel in bothe MYD and MOD;
+%3)if one pixel is marled as snow in MYD or MOD while missed or filled in the other product, then it is a snow pixel in both MYD and MOD 
+        CC=[SCAMOD(i,j,kk) SCAMYD(i,j,kk)];
+        if sum(CC)==250
+            SCAMOD(i,j,kk)=200;SCAMYD(i,j,kk)=200;
+        elseif length(find(CC==200))>=1
+            if min(CC)>1&min(CC)<200&min(CC)~=50                 
+            SCAMOD(i,j,kk)=min(CC);SCAMYD(i,j,kk)=min(CC);
+            else
+                SCAMOD(i,j,kk)=200;SCAMYD(i,j,kk)=200;
+            end
+            Nstop=1;
+        end        
+    end
+end
+if Nstop~=1
+    Nstop=StopNum; %no changes in pixel values, then stop iteration
+end
+end
+%calculate the snow cover area ratio to the total basin area. SCAY_Ori/SCAO_Ori is calculated from original data without any corrections.
+SCAY(kk)=length(find(SCAMYD(:,:,kk)==200))/length(find(SCAMYD(:,:,kk)>=0));SCAY_Ori(kk)=length(find(SCAMYD_Ori(:,:,kk)==200))/length(find(SCAMYD_Ori(:,:,kk)>=0));
+SCAO(kk)=length(find(SCAMOD(:,:,kk)==200))/length(find(SCAMOD(:,:,kk)>=0));SCAO_Ori(kk)=length(find(SCAMOD_Ori(:,:,kk)==200))/length(find(SCAMOD_Ori(:,:,kk)>=0));
+end
+%temproal correction: if one pixel is marked as cloud, while it is marked as snow on the previous and next dates, then it is corrected into snow pixel on the current date.
+for kk=2:length(ipt_myd)-1
+if 1<kk&kk<length(ipt_myd)
+    for i=1:n
+        for j=1:m
+        if SCAMYD(i,j,kk)==50&SCAMYD(i,j,kk-1)==200&SCAMYD(i,j,kk+1)==200
+            SCAMYD(i,j,kk)=200;NKstop=1;
+        end
+        if SCAMOD(i,j,kk)==50&SCAMOD(i,j,kk-1)==200&SCAMOD(i,j,kk+1)==200
+            SCAMOD(i,j,kk)=200;NKstop=1;
+        end
+        end
+    end
+end
+SCAY(kk)=length(find(SCAMYD(:,:,kk)==200))/length(find(SCAMYD(:,:,kk)>=0));
+SCAO(kk)=length(find(SCAMOD(:,:,kk)==200))/length(find(SCAMOD(:,:,kk)>=0));
+end
+if NKstop~=1
+    NKstop=StopNum; %no changes in pixel values, then stop iteration
+end
+end
+figure;
+plot(SCAY,'r--');hold on;plot(SCAO,'b--');hold on;plot(SCAY_Ori,'r-o');hold on; plot(SCAO_Ori,'b-o');
+legend('Corrected MYD','Corrected MOD','MYD\_NoCorrection','MOD\_NoCorrection');
